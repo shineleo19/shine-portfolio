@@ -17,6 +17,8 @@ const rootEnvPath = path.resolve(__dirname, '..', '.env');
 dotenv.config({ path: rootEnvPath });
 
 const app = express();
+// Render assigns a random PORT, so we must use process.env.PORT
+const port = process.env.PORT || 4000;
 const mongoUri = process.env.MONGODB_URI;
 
 function fixMongoUriIfNeeded(uri) {
@@ -47,27 +49,12 @@ function fixMongoUriIfNeeded(uri) {
   }
 }
 
-app.use(cors());
+// 1. UPDATED CORS to allow your Vercel frontend
+app.use(cors({
+  origin: ['http://localhost:5173', 'https://shine-portfolio-sooty.vercel.app'],
+  credentials: true
+}));
 app.use(express.json());
-
-// 1. GLOBAL DATABASE CONNECTION FOR SERVERLESS
-// We check readyState so Vercel doesn't open a new connection on every single click
-if (mongoUri && mongoose.connection.readyState === 0) {
-  const connectUri = fixMongoUriIfNeeded(mongoUri);
-  const mongooseOptions = {
-    serverApi: {
-      version: ServerApiVersion.v1,
-      strict: true,
-      deprecationErrors: true,
-    },
-  };
-  
-  mongoose.connect(connectUri, mongooseOptions)
-    .then(() => console.log('MongoDB connected'))
-    .catch((err) => console.error('MongoDB connection error:', err));
-} else if (!mongoUri) {
-  console.warn('MONGODB_URI is not set. Add it to Vercel Environment Variables.');
-}
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, db: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected' });
@@ -76,6 +63,7 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/books', booksRoute);
 app.use('/api/projects', projectsRoute);
 app.use('/api/watching', watchingRoute);
+// Make sure this matches what your frontend is fetching!
 app.use('/api/hobby-photos', hobbiesRoute);
 
 app.use((err, _req, res, _next) => {
@@ -83,13 +71,31 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ message: 'Internal server error' });
 });
 
-// 2. LOCAL DEV VS VERCEL EXPORT
-if (process.env.NODE_ENV !== 'production') {
-  // This runs when you type `npm start` locally
-  const port = process.env.PORT || 4000;
+// 2. REVERTED TO CONTINUOUS SERVER FOR RENDER
+async function start() {
+  if (!mongoUri) {
+    throw new Error('MONGODB_URI is not set. Add it to Render Environment Variables.');
+  }
+
+  const connectUri = fixMongoUriIfNeeded(mongoUri);
+  const mongooseOptions = {
+    serverApi: {
+      version: ServerApiVersion.v1,
+      strict: true,
+      deprecationErrors: true,
+    },
+  };
+
+  await mongoose.connect(connectUri, mongooseOptions);
+  console.log('MongoDB connected');
+
+  // This keeps the Render server alive!
   app.listen(port, () => {
-    console.log(`API server running at http://localhost:${port}`);
+    console.log(`API server running on port ${port}`);
   });
 }
 
-export default app;
+start().catch((err) => {
+  console.error('Failed to start server:', err.message);
+  process.exit(1);
+});
