@@ -49,10 +49,9 @@ function fixMongoUriIfNeeded(uri) {
   }
 }
 
-// 1. UPDATED CORS to allow your Vercel frontend
 app.use(cors({
   origin: ['http://localhost:5173', 'https://shine-portfolio-sooty.vercel.app'],
-  credentials: true
+  credentials: true,
 }));
 app.use(express.json());
 
@@ -63,7 +62,6 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/books', booksRoute);
 app.use('/api/projects', projectsRoute);
 app.use('/api/watching', watchingRoute);
-// Make sure this matches what your frontend is fetching!
 app.use('/api/hobby-photos', hobbiesRoute);
 
 app.use((err, _req, res, _next) => {
@@ -71,7 +69,6 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ message: 'Internal server error' });
 });
 
-// 2. REVERTED TO CONTINUOUS SERVER FOR RENDER
 async function start() {
   if (!mongoUri) {
     throw new Error('MONGODB_URI is not set. Add it to Render Environment Variables.');
