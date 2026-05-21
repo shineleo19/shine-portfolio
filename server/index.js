@@ -17,27 +17,24 @@ const rootEnvPath = path.resolve(__dirname, '..', '.env');
 dotenv.config({ path: rootEnvPath });
 
 const app = express();
-const port = process.env.PORT || 4000;
 const mongoUri = process.env.MONGODB_URI;
 
 function fixMongoUriIfNeeded(uri) {
   if (!uri || typeof uri !== 'string') return uri;
-  // quick check: valid scheme and more than one '@' suggests unencoded '@' in password
   const atCount = (uri.match(/@/g) || []).length;
   if (atCount <= 1) return uri;
 
   try {
-    // find credentials segment between scheme:// and last @ before host
     const schemeIndex = uri.indexOf('://');
     if (schemeIndex === -1) return uri;
     const afterScheme = uri.slice(schemeIndex + 3);
     const lastAt = afterScheme.lastIndexOf('@');
     if (lastAt === -1) return uri;
 
-    const cred = afterScheme.slice(0, lastAt); // user:password(possibly with @)
-    const rest = afterScheme.slice(lastAt + 1); // host/...
+    const cred = afterScheme.slice(0, lastAt);
+    const rest = afterScheme.slice(lastAt + 1);
     const colonIndex = cred.indexOf(':');
-    if (colonIndex === -1) return uri; // no password part
+    if (colonIndex === -1) return uri;
 
     const user = cred.slice(0, colonIndex);
     const pass = cred.slice(colonIndex + 1);
@@ -53,6 +50,25 @@ function fixMongoUriIfNeeded(uri) {
 app.use(cors());
 app.use(express.json());
 
+// 1. GLOBAL DATABASE CONNECTION FOR SERVERLESS
+// We check readyState so Vercel doesn't open a new connection on every single click
+if (mongoUri && mongoose.connection.readyState === 0) {
+  const connectUri = fixMongoUriIfNeeded(mongoUri);
+  const mongooseOptions = {
+    serverApi: {
+      version: ServerApiVersion.v1,
+      strict: true,
+      deprecationErrors: true,
+    },
+  };
+  
+  mongoose.connect(connectUri, mongooseOptions)
+    .then(() => console.log('MongoDB connected'))
+    .catch((err) => console.error('MongoDB connection error:', err));
+} else if (!mongoUri) {
+  console.warn('MONGODB_URI is not set. Add it to Vercel Environment Variables.');
+}
+
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, db: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected' });
 });
@@ -67,30 +83,13 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ message: 'Internal server error' });
 });
 
-async function start() {
-  if (!mongoUri) {
-    throw new Error('MONGODB_URI is not set. Add it to .env.');
-  }
-
-  const connectUri = fixMongoUriIfNeeded(mongoUri);
-  // Use Stable API options similar to the MongoDB Atlas sample to avoid driver surprises
-  const mongooseOptions = {
-    serverApi: {
-      version: ServerApiVersion.v1,
-      strict: true,
-      deprecationErrors: true,
-    },
-  };
-
-  await mongoose.connect(connectUri, mongooseOptions);
-  console.log('MongoDB connected');
-
+// 2. LOCAL DEV VS VERCEL EXPORT
+if (process.env.NODE_ENV !== 'production') {
+  // This runs when you type `npm start` locally
+  const port = process.env.PORT || 4000;
   app.listen(port, () => {
     console.log(`API server running at http://localhost:${port}`);
   });
 }
 
-start().catch((err) => {
-  console.error('Failed to start server:', err.message);
-  process.exit(1);
-});
+export default app;
