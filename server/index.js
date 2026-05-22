@@ -50,7 +50,7 @@ function fixMongoUriIfNeeded(uri) {
 }
 
 app.use(cors({
-  origin: ['http://localhost:5173', 'https://shine-portfolio-sooty.vercel.app'],
+  origin: ['http://localhost:5173', 'https://shine-garden.vercel.app'],
   credentials: true,
 }));
 app.use(express.json());
